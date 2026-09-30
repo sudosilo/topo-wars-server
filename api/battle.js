@@ -10,6 +10,43 @@ const MAX_ACTIONS = 500;
 const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const key = id => 'tw:battle:' + id;
+const pushKey = (id, side) => 'tw:push:' + id + ':' + side;
+const GAME_URL = 'https://topo-wars.vercel.app';
+
+// Turn notifications. The keys come from setup-push.js and live in the Vercel project settings.
+const PUSH_PUB = process.env.VAPID_PUBLIC_KEY || '';
+const PUSH_PRIV = process.env.VAPID_PRIVATE_KEY || '';
+const PUSH_HOSTS = ['fcm.googleapis.com', 'push.services.mozilla.com', 'push.apple.com', 'notify.windows.com'];
+let webpush = null;
+function pusher() {
+  if (!PUSH_PUB || !PUSH_PRIV) return null;
+  if (!webpush) {
+    webpush = require('web-push');
+    webpush.setVapidDetails(GAME_URL, PUSH_PUB, PUSH_PRIV);
+  }
+  return webpush;
+}
+function goodSub(sub) {
+  if (!sub || typeof sub !== 'object' || typeof sub.endpoint !== 'string' || sub.endpoint.length > 1000) return false;
+  if (!sub.keys || typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string') return false;
+  let host;
+  try { const u = new URL(sub.endpoint); if (u.protocol !== 'https:') return false; host = u.hostname; } catch (e) { return false; }
+  return process.env.PUSH_ANY_HOST === '1' || PUSH_HOSTS.some(h => host === h || host.endsWith('.' + h));
+}
+async function notify(id, side, body) {
+  const wp = pusher();
+  if (!wp) return false;
+  try {
+    const raw = await db.cmd('GET', pushKey(id, side));
+    if (!raw) return false;
+    const payload = JSON.stringify({ title: 'Topo Wars', body, id, url: '/#join=' + id });
+    await wp.sendNotification(JSON.parse(raw), payload, { TTL: 60 * 60 * 24 * 7, urgency: 'high', timeout: 6000 });
+    return true;
+  } catch (e) {
+    if (e.statusCode === 404 || e.statusCode === 410) await db.cmd('DEL', pushKey(id, side)).catch(() => {});
+    return false;
+  }
+}
 const newId = () => Array.from(crypto.randomBytes(6), b => ID_CHARS[b % ID_CHARS.length]).join('');
 const newToken = () => crypto.randomBytes(16).toString('hex');
 
@@ -65,7 +102,7 @@ const ops = {
     if (!db.configured()) return [200, { ok: true, redis: false, why: 'No Redis address is set' }];
     try {
       const pong = await db.cmd('PING');
-      return [200, { ok: true, redis: pong === 'PONG' }];
+      return [200, { ok: true, redis: pong === 'PONG', push: !!(PUSH_PUB && PUSH_PRIV) }];
     } catch (e) {
       return [200, { ok: true, redis: false, why: e.message }];
     }
@@ -99,6 +136,7 @@ const ops = {
       rec.t[2] = newToken();
       side = 2;
       await save(b.id, rec);
+      await notify(b.id, 1, 'Your friend joined the battle.');
     }
     return [200, { id: b.id, token: rec.t[side], side, rev: rec.rev, state: rec.s, joined: !!rec.t[2], place: rec.place || '' }];
   },
@@ -110,6 +148,30 @@ const ops = {
     const out = { rev: rec.rev, joined: !!rec.t[2] };
     if (Number(b.rev) !== rec.rev) out.state = rec.s;
     return [200, out];
+  },
+
+  async vapid() {
+    return [200, { key: PUSH_PUB || null }];
+  },
+
+  async subscribe(b) {
+    const rec = await load(b.id);
+    if (!rec || !rec.t) return [404, { error: 'That battle was not found. It may have expired.' }];
+    const side = sideOf(rec, b.token);
+    if (!side) return [403, { error: 'You are not a player in this battle.' }];
+    if (!goodSub(b.sub)) return [400, { error: 'That notification address was not accepted.' }];
+    const sub = { endpoint: b.sub.endpoint, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } };
+    await db.cmd('SET', pushKey(b.id, side), JSON.stringify(sub), 'EX', KEEP_SECONDS);
+    return [200, { ok: true, push: !!pusher() }];
+  },
+
+  async unsubscribe(b) {
+    const rec = await load(b.id);
+    if (!rec || !rec.t) return [404, { error: 'That battle was not found. It may have expired.' }];
+    const side = sideOf(rec, b.token);
+    if (!side) return [403, { error: 'You are not a player in this battle.' }];
+    await db.cmd('DEL', pushKey(b.id, side));
+    return [200, { ok: true }];
   },
 
   async turn(b) {
@@ -134,6 +196,12 @@ const ops = {
       rec.s = Engine.serialize(G);
       rec.rev += 1;
       await save(b.id, rec);
+      const other = side === 1 ? 2 : 1;
+      const w = G.over && G.over.winner;
+      await notify(b.id, other, !G.over ? 'Your friend finished their turn. Your move in round ' + G.round + '.'
+        : w === other ? 'You won the battle. Open Topo Wars to see how it ended.'
+        : w === side ? 'Your friend won the battle. Open Topo Wars to see how it ended.'
+        : 'The battle ended in a draw.');
       return [200, { rev: rec.rev, state: rec.s, joined: !!rec.t[2] }];
     } finally {
       await db.cmd('DEL', lock);
@@ -152,7 +220,7 @@ module.exports = async (req, res) => {
     const b = { ...q, ...(await readBody(req)) };
     const op = ops[b.op || 'health'];
     if (!op) return reply(res, 400, { error: 'Unknown operation' });
-    if (b.op && b.op !== 'health' && !db.configured()) return reply(res, 503, { error: 'The server has no database yet.' });
+    if (b.op && b.op !== 'health' && b.op !== 'vapid' && !db.configured()) return reply(res, 503, { error: 'The server has no database yet.' });
     const [code, obj] = await op(b);
     return reply(res, code, obj);
   } catch (e) {

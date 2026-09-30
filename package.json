@@ -1,5 +1,10 @@
 {
   "name": "topo-wars-server",
   "private": true,
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
 }
