@@ -39,7 +39,7 @@ async function notify(id, side, body) {
   try {
     const raw = await db.cmd('GET', pushKey(id, side));
     if (!raw) return false;
-    const payload = JSON.stringify({ title: 'Topo Wars', body, id, url: '/#join=' + id });
+    const payload = JSON.stringify({ title: 'Topo Wars', body, id, url: '/?join=' + id });
     await wp.sendNotification(JSON.parse(raw), payload, { TTL: 60 * 60 * 24 * 7, urgency: 'high', timeout: 6000 });
     return true;
   } catch (e) {
