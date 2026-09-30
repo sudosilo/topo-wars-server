@@ -1,0 +1,5 @@
+{
+  "name": "topo-wars-server",
+  "private": true,
+  "engines": { "node": ">=20" }
+}
