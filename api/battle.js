@@ -94,6 +94,8 @@ function checkNew(G) {
   if (G.score[1] || G.score[2] || G.supply[2] !== 0 || G.supply[1] > Engine.INCOME + 1) return 'The starting supply or score is wrong';
   const N = G.size * G.size;
   for (const k of ['elev', 'tier', 'terr', 'owner']) if (!G[k] || G[k].length !== N) return 'The map data is incomplete';
+  const caches = G.caches || [];
+  if (!Array.isArray(caches) || caches.length > 40 || caches.some(c => !c || !Number.isInteger(c.idx) || c.idx < 0 || c.idx >= N || !Engine.LOOT_NAMES[c.kind])) return 'The supply crates are not valid';
   return null;
 }
 
