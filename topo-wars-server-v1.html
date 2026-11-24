@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Topo Wars Server</title>
+<style>
+body{margin:0;font-family:system-ui,sans-serif;background:#f4f7fb;color:#1c2a3a;display:flex;min-height:100vh;align-items:center;justify-content:center}
+.card{background:#fff;border:2px solid #1e6fd9;border-radius:14px;padding:28px 24px;max-width:420px;width:88%;text-align:center}
+h1{margin:0 0 8px;color:#1e6fd9;font-size:24px}
+p{margin:8px 0;line-height:1.4}
+#state{font-weight:700}
+a.play{display:inline-block;margin-top:14px;background:#1e6fd9;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>Topo Wars Server</h1>
+<p>Battle backend for Topo Wars.</p>
+<p>Status: <span id="state">checking</span></p>
+<a class="play" href="https://topo-wars.vercel.app">Play Topo Wars</a>
+</div>
+<script>
+fetch("/api/battle").then(function(r){return r.json()}).then(function(j){
+  document.getElementById("state").textContent = j.ok ? "online" : "offline";
+}).catch(function(){ document.getElementById("state").textContent = "offline"; });
+</script>
+</body>
+</html>

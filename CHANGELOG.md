@@ -1,3 +1,5 @@
+2026-11-24, v2026.11.24. The root address now shows a status page with a link to the game instead of a not found page.
+
 2026-10-03, v2026.10.03. Added tanks, mines, a chinook, and grenade splash damage. Added a commander aura. The battle rules were synced with the game several times.
 
 2026-10-01, v2026.10.01. Added bomber runs and snipers. Grenades can now be thrown after walking.

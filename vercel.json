@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/", "destination": "/topo-wars-server-v1.html" }
+  ]
+}
